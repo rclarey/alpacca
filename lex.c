@@ -1,73 +1,24 @@
+#include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-
-
-/*
-TOKENS
-----------
-BANG:   !
-EQUAL:  =
-MINUS:  -
-PLUS:   +
-SLASH:  /
-LTHAN:  <
-GTHAN:  >
-DOT:    .
-STAR:   *
-MOD:    %
-AND:    &
-NOT:    ~
-OR:     |
-XOR:    ^
-LPAREN: (
-RPAREN: )
-LBRACK: [
-RBRACK: ]
-LBRACE: {
-RBRACE: }
-QUOTE: '
-COMMA:  ,
-COLON:  :
-POUND:  #
-
-BANG_EQUAL:  !=
-EQUAL_EQUAL: ==
-ARROW:       ->
-SLASH_SLASH: //
-LTHAN_EQUAL: <=
-GTHAN_EQUAL: >=
-STAR_STAR:   **
-AND_AND:     &&
-OR_OR:       ||
-NULL_TUPLE:  ()
-
-TYPE_STR:  str
-TYPE_INT:  int
-TYPE_UINT: uint
-TYPE_DBL:  dbl
-TYPE_BOOL: bool
-
-IDENTIFIER: [A-Za-z_][A-Za-z0-9_]*
-NUMBER:     [+-]?(0x|0o|0b)?\d+
-STRING:     '(\')?(.+(\'))*?'
-COMMENT:    #.*?[#\n]
-WHITESPACE: [ \t\n\r\f]
-*/
+#include <stdbool.h>
+#include <inttypes.h>
 
 // we purposefully put non-accepting states first so we can do
 // `state > START` to check if `state` is accepting
 typedef enum TokenType {
   // non-accepting states
   BAD_STATE = 0,
-  ZERO_X,
-  ZERO_O,
-  ZERO_B,
-  QUOTE,
   EQUAL,
   BACKSLASH,
-  STRING,
-  CANCEL_QUOTE,
   START,
+
+  // "accepting" states for the purpose of nice errors
+  INTALPHA,
+  STRING_UNCLOSED,
+  CANCEL_QUOTE,
+
   // accepting states
   BANG,
   MINUS,
@@ -90,8 +41,11 @@ typedef enum TokenType {
   RBRACE,
   COMMA,
   COLON,
+  NEWLINE,
+
   BANG_EQUAL,
   EQUAL_EQUAL,
+  FAT_ARROW,
   ARROW,
   SLASH_SLASH,
   LTHAN_EQUAL,
@@ -99,21 +53,22 @@ typedef enum TokenType {
   STAR_STAR,
   AND_AND,
   OR_OR,
+
   TYPE_STR,
   TYPE_INT,
   TYPE_UINT,
   TYPE_DBL,
   TYPE_BOOL,
   ELSE,
+
   IDENTIFIER,
-  ZERO,
-  NUMBER,
-  NUMBER_2,
-  NUMBER_8,
-  NUMBER_16,
+  BOOLEAN,
+  INTEGER,
   COMMENT,
   COMMENT_END,
+  STRING,
   WHITESPACE,
+
   ID_S,
   ID_ST,
   ID_I,
@@ -129,19 +84,25 @@ typedef enum TokenType {
   ID_E,
   ID_EL,
   ID_ELS,
+  ID_T,
+  ID_TR,
+  ID_TRU,
+  ID_F,
+  ID_FA,
+  ID_FAL,
+  ID_FALS,
 } TokenType;
-
-typedef struct DFA {
-  TokenType start;
-  TokenType (*dfaStep)(char ch, TokenType state);
-} DFA;
 
 typedef struct Token {
   TokenType type;
-  char* lexeme;
+  void* value;
+  struct Token* next;
+  int line;
+  int col;
 } Token;
 
-enum TokenType dfaStep(char ch, TokenType state) {
+// given the current char and state, takes on step forward in the DFA
+TokenType dfaStep(char ch, TokenType state) {
   switch (state) {
     case START:
       switch (ch) {
@@ -171,133 +132,184 @@ enum TokenType dfaStep(char ch, TokenType state) {
         case 'b': return ID_B;
         case 'd': return ID_D;
         case 'e': return ID_E;
+        case 'f': return ID_F;
         case 'i': return ID_I;
         case 's': return ID_S;
+        case 't': return ID_T;
         case 'u': return ID_U;
-        case '0': return ZERO;
+        case '0': return INTEGER;
         case '#': return COMMENT;
-        case '\'': return QUOTE;
+        case '\'': return STRING_UNCLOSED;
+        case '\n': return NEWLINE;
         default:
           if (isspace(ch)) return WHITESPACE;
           if (isalpha(ch)) return IDENTIFIER;
-          if (isdigit(ch)) return NUMBER;
+          if (isdigit(ch)) return INTEGER;
           return BAD_STATE;
       }
+
     case BANG:
       switch (ch) {
         case '=': return BANG_EQUAL;
         default: return BAD_STATE;
       }
+
+    case EQUAL:
+      switch (ch) {
+        case '>': return FAT_ARROW;
+        default: return BAD_STATE;
+      }
+
     case MINUS:
       switch (ch) {
         case '>': return ARROW;
-        default: return BAD_STATE;
+        default:
+          if (isdigit(ch)) return INTEGER;
+          return BAD_STATE;
       }
+
+    case PLUS:
+      if (isdigit(ch)) return INTEGER;
+      return BAD_STATE;
+
     case SLASH:
       switch (ch) {
         case '/': return SLASH_SLASH;
         default: return BAD_STATE;
       }
+
     case LTHAN:
       switch (ch) {
         case '=': return LTHAN_EQUAL;
         default: return BAD_STATE;
       }
+
     case GTHAN:
       switch (ch) {
         case '=': return GTHAN_EQUAL;
-        default: BAD_STATE;
+        default: return BAD_STATE;
       }
+
     case STAR:
       switch (ch) {
         case '*': return STAR_STAR;
         default: return BAD_STATE;
       }
+
     case AND:
       switch (ch) {
         case '&': return AND_AND;
         default: return BAD_STATE;
       }
+
     case OR:
       switch (ch) {
         case '|': return OR_OR;
         default: return BAD_STATE;
       }
+
     case ID_B:
       switch (ch) {
         case 'o': return ID_BO;
         default: return IDENTIFIER;
       }
+
     case ID_D:
       switch (ch) {
         case 'b': return ID_DB;
         default: return IDENTIFIER;
       }
+
     case ID_E:
       switch (ch) {
         case 'l': return ID_EL;
         default: return IDENTIFIER;
       }
+
+    case ID_F:
+      switch (ch) {
+        case 'a': return ID_FA;
+        default: return IDENTIFIER;
+      }
+
     case ID_I:
       switch (ch) {
         case 'n': return ID_IN;
         default: return IDENTIFIER;
       }
+
     case ID_S:
       switch (ch) {
         case 't': return ID_ST;
         default: return IDENTIFIER;
       }
+
     case ID_U:
       switch (ch) {
         case 'i': return ID_UI;
         default: return IDENTIFIER;
       }
+
     case ID_BO:
       switch (ch) {
         case 'o': return ID_BOO;
         default: return IDENTIFIER;
       }
+
     case ID_DB:
       switch (ch) {
         case 'l': return TYPE_DBL;
         default: return IDENTIFIER;
       }
+
     case ID_EL:
       switch (ch) {
         case 's': return ID_ELS;
         default: return IDENTIFIER;
       }
+
+    case ID_FA:
+      switch (ch) {
+        case 'l': return ID_FAL;
+        default: return IDENTIFIER;
+      }
+
     case ID_IN:
       switch (ch) {
         case 't': return TYPE_INT;
         default: return IDENTIFIER;
       }
+
     case ID_ST:
       switch (ch) {
         case 'r': return TYPE_STR;
         default: return IDENTIFIER;
       }
+
     case ID_UI:
       switch (ch) {
         case 'n': return ID_UIN;
         default: return IDENTIFIER;
       }
+
     case ID_BOO:
       switch (ch) {
         case 'l': return TYPE_BOOL;
         default: return IDENTIFIER;
       }
+
     case ID_ELS:
       switch (ch) {
         case 'e': return ELSE;
         default: return IDENTIFIER;
       }
+
     case ID_UIN:
       switch (ch) {
         case 't': return TYPE_UINT;
         default: return IDENTIFIER;
       }
+
     case COMMENT:
       switch (ch) {
         case '\n':
@@ -306,84 +318,237 @@ enum TokenType dfaStep(char ch, TokenType state) {
         case '#': return COMMENT_END;
         default: return COMMENT;
       }
-    case QUOTE:
+
+    case STRING_UNCLOSED:
       switch (ch) {
-        case '\\': return CANCEL_QUOTE; 
-        default: return STRING;
+        case '\\': return CANCEL_QUOTE;
+        case '\'': return STRING;
+        case '\n': return BAD_STATE;
+        default: return STRING_UNCLOSED;
       }
-    case ZERO:
+
+    case CANCEL_QUOTE:
       switch (ch) {
-        case 'b': return ZERO_B;
-        case 'o': return ZERO_O;
-        case 'x': return ZERO_X;
-        default:
-          if (isdigit(ch)) return NUMBER;
-          return BAD_STATE;
+        case '\n': return BAD_STATE;
+        default: return STRING_UNCLOSED;
       }
-    case ZERO_B:
-      if (isdigit(ch)) return NUMBER_2;
+
+    case INTEGER:
+      if (isdigit(ch)) return INTEGER;
+      if (isalpha(ch)) return INTALPHA;
       return BAD_STATE;
-    case ZERO_O:
-      if (isdigit(ch)) return NUMBER_8;
+
+    case INTALPHA:
+      if (isalpha(ch) || isdigit(ch) || ch == '_') return INTALPHA;
       return BAD_STATE;
-    case ZERO_X:
-      if (isdigit(ch)) return NUMBER_16;
+
+    case IDENTIFIER:
+      if (isalpha(ch) || isdigit(ch) || ch == '_') return IDENTIFIER;
       return BAD_STATE;
-    case NUMBER:
-      if (isdigit(ch)) return NUMBER;
-      return BAD_STATE;
-    // purposfully accept bad number literals (ex: 0b1234) so we can give nice
-    // errors later on
-    case NUMBER_2:
-      if (isdigit(ch)) return NUMBER_2;
-      return BAD_STATE;
-    case NUMBER_8:
-      if (isdigit(ch)) return NUMBER_8;
-      return BAD_STATE;
-    case NUMBER_16:
-      if (isdigit(ch) && ((ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f'))) {
-        return NUMBER_16;
-      }
-      return BAD_STATE;
+
     default:
-      if (isdigit(ch)) return NUMBER;
       return BAD_STATE;
   }
 }
 
-void copyString(char* dest, char* src, unsigned int start, unsigned int end) {
-  unsigned int n = end - start + 1;
-  realloc(dest, sizeof(char) * (n + 1));
-  memcpy(dest, src + start, n);
-  dest[n + 1] = '\0';
+void copyString(char** dest, const char* src, int start, int end) {
+  int n = end - start + 1;
+  *dest = realloc(*dest, sizeof(char) * (n + 1));
+  memcpy(*dest, src + start, n);
+  (*dest)[n + 1] = '\0';
+}
+
+void* strToValue(TokenType type, const char* str, int start, int end) {
+  bool* boolOut;
+  int* intOut;
+  char* strOut;
+
+  char* intStr = NULL;
+  char* endPtr;
+  int n;
+
+  switch (type) {
+    case BOOLEAN:
+      boolOut = malloc(sizeof(bool));
+      *boolOut = (str[start] == 't' ? true : false);
+      return boolOut;
+
+    case INTEGER:
+      intOut = malloc(sizeof(int));
+      copyString(&intStr, str, start, end);
+      *intOut = strtoimax(intStr, &endPtr, 10);
+      free (intStr);
+      return intOut;
+
+    case STRING:
+      // -2 b/c we don't care about quotes
+      n = end - start - 2;
+      strOut = malloc(sizeof(char) * (n + 1));
+      memcpy(strOut, str + 1, n);
+      strOut[n] = '\0';
+      return strOut;
+
+    // capture the lexeme as a string for anything else
+    default:
+      n = end - start;
+      strOut = malloc(sizeof(char) * (n + 1));
+      memcpy(strOut, str + start, n);
+      strOut[n] = '\0';
+      return strOut;
+  }
 }
 
 // translate accepting state into more uniform token type
 // ie. ID_E, ID_S, etc. all get converted to IDENTIFIER
 TokenType normalizeTokenType(TokenType type) {
-  
+  if (type >= ID_S) {
+    return IDENTIFIER;
+  }
+
+  switch (type) {
+    case COMMENT_END: return COMMENT;
+    case NEWLINE: return WHITESPACE;
+    default: return type;
+  }
 }
 
-// get the next token from input
-Token maximalMunch(char* input, unsigned int start, DFA dfa) {
+#define NRM "\x1B[0m"
+#define RED "\x1B[31m"
+#define YEL "\x1B[33m"
+#define ERR_INVALID "Invalid or unexpected token"
+#define ERR_STRING  "Unclosed string"
+
+void lexError(const char* input, char* error, int lineStart, int line, int col, int end) {
+  char* lineStr = NULL;
+  int lineLength = strcspn(input + lineStart, "\n\0") - 1;
+  copyString(&lineStr, input, lineStart, lineStart + lineLength);
+
+  int lineNumLength = 1;
+  int n = line;
+  while ((n = n / 10)) lineNumLength++;
+
+  printf(RED "Syntax Error: %s on line %d\n" NRM, error, line);
+  printf("%d: %s\n", line, lineStr);
+  for (int i = -(lineNumLength + 2); i < col; i++) {
+    printf(" ");
+  }
+  for (int i = 0; i < end; i++) {
+    printf("^");
+  }
+  printf("\n\n");
+
+  free (lineStr);
+}
+
+// some nice global variables for our lexing
+int lineNum = 1;
+int lineStart = 0;
+bool hasLexError = false;
+
+// get the next token from input; returns length of lexeme
+int maximalMunch(Token* dest, const char* input, int start) {
   TokenType state = START;
   TokenType acceptingState = BAD_STATE;
-  unsigned int cur = start;
-  unsigned int acceptingEnd = 0;
+  int cur = start;
+  int acceptingEnd = cur;
 
   // keep looping until we reach a bad state
-  for (;(state = dfaStep(&(input + cur, state))) != BAD_STATE; cur++) {
+  while (input[cur] != '\0' && (state = dfaStep(input[cur], state)) != BAD_STATE) {
     if (state > START) {
       acceptingState = state;
       acceptingEnd = cur + 1;
     }
+
+    if (input[cur] == '\n') {
+      lineNum++;
+      lineStart = cur + 1;
+    }
+    cur++;
   }
 
-  // allocate token to return
-  Token out = malloc(sizeof(Token));
-  // copy the lexeme for our token from input
-  unsigned int numChars = acceptingEnd - start;
-  out->lexeme = malloc(numChars + 1);
-  memcpy(out->lexeme, input + start, numChars);
-  out->lexeme[numChars + 1] = '\0';
+  // handle lexing errors
+  if (acceptingState < BANG) {
+    char* error;
+    hasLexError = true;
+
+    switch (acceptingState) {
+      case BAD_STATE:
+        acceptingEnd++;
+        // intentional fall through
+
+      case INTALPHA:
+        error = ERR_INVALID;
+        break;
+
+      case STRING_UNCLOSED:
+        error = ERR_STRING;
+        break;
+
+      default:
+        break;
+    }
+
+    lexError(input, error, lineStart, lineNum, start - lineStart, acceptingEnd - start);
+  }
+
+  // create token to return
+  dest->type = normalizeTokenType(acceptingState);
+  dest->value = strToValue(dest->type, input, start, acceptingEnd);
+  dest->next = malloc(sizeof(Token));
+  dest->line = lineNum;
+  dest->col = start - lineStart;
+
+  return acceptingEnd - start;
+}
+
+// produce a linked list of Tokens from the given string
+Token* lex(const char* input) {
+  Token* out = malloc(sizeof(Token));
+  Token* nextToken = out;
+  Token* curToken;
+  int pos = 0;
+  int length = 0;
+  const int end = strlen(input);
+
+  while (pos < end) {
+    length = maximalMunch(nextToken, input, pos);
+    // TODO: handle fail to get token
+    curToken = nextToken;
+    nextToken = nextToken->next;
+    pos += length;
+  }
+
+  // make sure LL ends in NULL
+  curToken->next = NULL;
+
+  return out;
+}
+
+void printTokens(Token* head) {
+  Token* cur = head;
+
+  printf("~~~~~~~\nTOKENS:\n~~~~~~~\n");
+  while (cur != NULL) {
+    switch (cur->type) {
+      case BOOLEAN:
+        printf("`%s`\n", *(bool*)cur->value ? "true" : "false");
+        break;
+      case INTEGER:
+        printf("`%d`\n", *(int*)cur->value);
+        break;
+      default:
+        if (((char*)cur->value)[0] == '\n') {
+          printf("`\\n`\n");
+        } else {
+          printf("`%s`\n", (char*)cur->value);
+        }
+        break;
+    }
+    cur = cur->next;
+  }
+}
+
+int main(int argc, const char* argv[]) {
+  Token* toks = lex(argv[1]);
+  printTokens(toks);
 }
