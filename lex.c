@@ -5,349 +5,256 @@
 #include <stdbool.h>
 #include <inttypes.h>
 
-// we purposefully put non-accepting states first so we can do
-// `state > START` to check if `state` is accepting
-typedef enum TokenType {
-  // non-accepting states
-  BAD_STATE = 0,
-  EQUAL,
-  BACKSLASH,
-  START,
-
-  // "accepting" states for the purpose of nice errors
-  INTALPHA,
-  STRING_UNCLOSED,
-  CANCEL_QUOTE,
-
-  // accepting states
-  BANG,
-  MINUS,
-  PLUS,
-  SLASH,
-  LTHAN,
-  GTHAN,
-  DOT,
-  STAR,
-  MOD,
-  AND,
-  NOT,
-  OR,
-  XOR,
-  LPAREN,
-  RPAREN,
-  LBRACK,
-  RBRACK,
-  LBRACE,
-  RBRACE,
-  COMMA,
-  COLON,
-  NEWLINE,
-
-  BANG_EQUAL,
-  EQUAL_EQUAL,
-  FAT_ARROW,
-  ARROW,
-  SLASH_SLASH,
-  LTHAN_EQUAL,
-  GTHAN_EQUAL,
-  STAR_STAR,
-  AND_AND,
-  OR_OR,
-
-  TYPE_STR,
-  TYPE_INT,
-  TYPE_UINT,
-  TYPE_DBL,
-  TYPE_BOOL,
-  ELSE,
-
-  IDENTIFIER,
-  BOOLEAN,
-  INTEGER,
-  COMMENT,
-  COMMENT_END,
-  STRING,
-  WHITESPACE,
-
-  ID_S,
-  ID_ST,
-  ID_I,
-  ID_IN,
-  ID_U,
-  ID_UI,
-  ID_UIN,
-  ID_D,
-  ID_DB,
-  ID_B,
-  ID_BO,
-  ID_BOO,
-  ID_E,
-  ID_EL,
-  ID_ELS,
-  ID_T,
-  ID_TR,
-  ID_TRU,
-  ID_F,
-  ID_FA,
-  ID_FAL,
-  ID_FALS,
-} TokenType;
-
-typedef struct Token {
-  TokenType type;
-  void* value;
-  struct Token* next;
-  int line;
-  int col;
-} Token;
+#include "lex.h"
+#include "error.h"
 
 // given the current char and state, takes on step forward in the DFA
 TokenType dfaStep(char ch, TokenType state) {
   switch (state) {
-    case START:
+    case T_START:
       switch (ch) {
-        case '\\': return BACKSLASH;
-        case '!': return BANG;
-        case '=': return EQUAL;
-        case '-': return MINUS;
-        case '+': return PLUS;
-        case '/': return SLASH;
-        case '<': return LTHAN;
-        case '>': return GTHAN;
-        case '.': return DOT;
-        case '*': return STAR;
-        case '%': return MOD;
-        case '&': return AND;
-        case '|': return OR;
-        case '~': return NOT;
-        case '^': return XOR;
-        case '(': return LPAREN;
-        case ')': return RPAREN;
-        case '[': return LBRACK;
-        case ']': return RBRACK;
-        case '{': return LBRACE;
-        case '}': return RBRACE;
-        case ',': return COMMA;
-        case ':': return COLON;
-        case 'b': return ID_B;
-        case 'd': return ID_D;
-        case 'e': return ID_E;
-        case 'f': return ID_F;
-        case 'i': return ID_I;
-        case 's': return ID_S;
-        case 't': return ID_T;
-        case 'u': return ID_U;
-        case '0': return INTEGER;
-        case '#': return COMMENT;
-        case '\'': return STRING_UNCLOSED;
-        case '\n': return NEWLINE;
+        case '\\': return T_BACKSLASH;
+        case '!': return T_BANG;
+        case '=': return T_EQUAL;
+        case '-': return T_MINUS;
+        case '+': return T_PLUS;
+        case '/': return T_SLASH;
+        case '<': return T_LTHAN;
+        case '>': return T_GTHAN;
+        case '.': return T_DOT;
+        case '*': return T_STAR;
+        case '%': return T_MOD;
+        case '&': return T_AND;
+        case '|': return T_OR;
+        case '~': return T_NOT;
+        case '^': return T_XOR;
+        case '(': return T_LPAREN;
+        case ')': return T_RPAREN;
+        case '[': return T_LBRACK;
+        case ']': return T_RBRACK;
+        case '{': return T_LBRACE;
+        case '}': return T_RBRACE;
+        case ',': return T_COMMA;
+        case ':': return T_COLON;
+        case 'b': return T_ID_B;
+        case 'd': return T_ID_D;
+        case 'e': return T_ID_E;
+        case 'f': return T_ID_F;
+        case 'i': return T_ID_I;
+        case 's': return T_ID_S;
+        case 't': return T_ID_T;
+        case 'u': return T_ID_U;
+        case '0': return T_INTEGER;
+        case '#': return T_COMMENT;
+        case '\'': return T_STRING_UNCLOSED;
+        case '\n': return T_NEWLINE;
         default:
-          if (isspace(ch)) return WHITESPACE;
-          if (isalpha(ch)) return IDENTIFIER;
-          if (isdigit(ch)) return INTEGER;
-          return BAD_STATE;
+          if (isspace(ch)) return T_WHITESPACE;
+          if (isalpha(ch)) return T_IDENTIFIER;
+          if (isdigit(ch)) return T_INTEGER;
+          return T_BAD_STATE;
       }
 
-    case BANG:
+    case T_BANG:
       switch (ch) {
-        case '=': return BANG_EQUAL;
-        default: return BAD_STATE;
+        case '=': return T_BANG_EQUAL;
+        default: return T_BAD_STATE;
       }
 
-    case EQUAL:
+    case T_EQUAL:
       switch (ch) {
-        case '>': return FAT_ARROW;
-        default: return BAD_STATE;
+        case '>': return T_FAT_ARROW;
+        default: return T_BAD_STATE;
       }
 
-    case MINUS:
+    case T_MINUS:
       switch (ch) {
-        case '>': return ARROW;
+        case '>': return T_ARROW;
         default:
-          if (isdigit(ch)) return INTEGER;
-          return BAD_STATE;
+          if (isdigit(ch)) return T_INTEGER;
+          return T_BAD_STATE;
       }
 
-    case PLUS:
-      if (isdigit(ch)) return INTEGER;
-      return BAD_STATE;
+    case T_PLUS:
+      if (isdigit(ch)) return T_INTEGER;
+      return T_BAD_STATE;
 
-    case SLASH:
+    case T_SLASH:
       switch (ch) {
-        case '/': return SLASH_SLASH;
-        default: return BAD_STATE;
+        case '/': return T_SLASH_SLASH;
+        default: return T_BAD_STATE;
       }
 
-    case LTHAN:
+    case T_LTHAN:
       switch (ch) {
-        case '=': return LTHAN_EQUAL;
-        default: return BAD_STATE;
+        case '=': return T_LTHAN_EQUAL;
+        default: return T_BAD_STATE;
       }
 
-    case GTHAN:
+    case T_GTHAN:
       switch (ch) {
-        case '=': return GTHAN_EQUAL;
-        default: return BAD_STATE;
+        case '=': return T_GTHAN_EQUAL;
+        default: return T_BAD_STATE;
       }
 
-    case STAR:
+    case T_STAR:
       switch (ch) {
-        case '*': return STAR_STAR;
-        default: return BAD_STATE;
+        case '*': return T_STAR_STAR;
+        default: return T_BAD_STATE;
       }
 
-    case AND:
+    case T_AND:
       switch (ch) {
-        case '&': return AND_AND;
-        default: return BAD_STATE;
+        case '&': return T_AND_AND;
+        default: return T_BAD_STATE;
       }
 
-    case OR:
+    case T_OR:
       switch (ch) {
-        case '|': return OR_OR;
-        default: return BAD_STATE;
+        case '|': return T_OR_OR;
+        default: return T_BAD_STATE;
       }
 
-    case ID_B:
+    case T_ID_B:
       switch (ch) {
-        case 'o': return ID_BO;
-        default: return IDENTIFIER;
+        case 'o': return T_ID_BO;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_D:
+    case T_ID_D:
       switch (ch) {
-        case 'b': return ID_DB;
-        default: return IDENTIFIER;
+        case 'b': return T_ID_DB;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_E:
+    case T_ID_E:
       switch (ch) {
-        case 'l': return ID_EL;
-        default: return IDENTIFIER;
+        case 'l': return T_ID_EL;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_F:
+    case T_ID_F:
       switch (ch) {
-        case 'a': return ID_FA;
-        default: return IDENTIFIER;
+        case 'a': return T_ID_FA;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_I:
+    case T_ID_I:
       switch (ch) {
-        case 'n': return ID_IN;
-        default: return IDENTIFIER;
+        case 'n': return T_ID_IN;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_S:
+    case T_ID_S:
       switch (ch) {
-        case 't': return ID_ST;
-        default: return IDENTIFIER;
+        case 't': return T_ID_ST;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_U:
+    case T_ID_U:
       switch (ch) {
-        case 'i': return ID_UI;
-        default: return IDENTIFIER;
+        case 'i': return T_ID_UI;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_BO:
+    case T_ID_BO:
       switch (ch) {
-        case 'o': return ID_BOO;
-        default: return IDENTIFIER;
+        case 'o': return T_ID_BOO;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_DB:
+    case T_ID_DB:
       switch (ch) {
-        case 'l': return TYPE_DBL;
-        default: return IDENTIFIER;
+        case 'l': return T_TYPE_DBL;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_EL:
+    case T_ID_EL:
       switch (ch) {
-        case 's': return ID_ELS;
-        default: return IDENTIFIER;
+        case 's': return T_ID_ELS;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_FA:
+    case T_ID_FA:
       switch (ch) {
-        case 'l': return ID_FAL;
-        default: return IDENTIFIER;
+        case 'l': return T_ID_FAL;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_IN:
+    case T_ID_IN:
       switch (ch) {
-        case 't': return TYPE_INT;
-        default: return IDENTIFIER;
+        case 't': return T_TYPE_INT;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_ST:
+    case T_ID_ST:
       switch (ch) {
-        case 'r': return TYPE_STR;
-        default: return IDENTIFIER;
+        case 'r': return T_TYPE_STR;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_UI:
+    case T_ID_UI:
       switch (ch) {
-        case 'n': return ID_UIN;
-        default: return IDENTIFIER;
+        case 'n': return T_ID_UIN;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_BOO:
+    case T_ID_BOO:
       switch (ch) {
-        case 'l': return TYPE_BOOL;
-        default: return IDENTIFIER;
+        case 'l': return T_TYPE_BOOL;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_ELS:
+    case T_ID_ELS:
       switch (ch) {
-        case 'e': return ELSE;
-        default: return IDENTIFIER;
+        case 'e': return T_ELSE;
+        default: return T_IDENTIFIER;
       }
 
-    case ID_UIN:
+    case T_ID_UIN:
       switch (ch) {
-        case 't': return TYPE_UINT;
-        default: return IDENTIFIER;
+        case 't': return T_TYPE_UINT;
+        default: return T_IDENTIFIER;
       }
 
-    case COMMENT:
+    case T_COMMENT:
       switch (ch) {
         case '\n':
         case '\r':
         case '\f':
-        case '#': return COMMENT_END;
-        default: return COMMENT;
+        case '#': return T_COMMENT_END;
+        default: return T_COMMENT;
       }
 
-    case STRING_UNCLOSED:
+    case T_STRING_UNCLOSED:
       switch (ch) {
-        case '\\': return CANCEL_QUOTE;
-        case '\'': return STRING;
-        case '\n': return BAD_STATE;
-        default: return STRING_UNCLOSED;
+        case '\\': return T_CANCEL_QUOTE;
+        case '\'': return T_STRING;
+        case '\n': return T_BAD_STATE;
+        default: return T_STRING_UNCLOSED;
       }
 
-    case CANCEL_QUOTE:
+    case T_CANCEL_QUOTE:
       switch (ch) {
-        case '\n': return BAD_STATE;
-        default: return STRING_UNCLOSED;
+        case '\n': return T_BAD_STATE;
+        default: return T_STRING_UNCLOSED;
       }
 
-    case INTEGER:
-      if (isdigit(ch)) return INTEGER;
-      if (isalpha(ch)) return INTALPHA;
-      return BAD_STATE;
+    case T_INTEGER:
+      if (isdigit(ch)) return T_INTEGER;
+      if (isalpha(ch)) return T_INTALPHA;
+      return T_BAD_STATE;
 
-    case INTALPHA:
-      if (isalpha(ch) || isdigit(ch) || ch == '_') return INTALPHA;
-      return BAD_STATE;
+    case T_INTALPHA:
+      if (isalpha(ch) || isdigit(ch) || ch == '_') return T_INTALPHA;
+      return T_BAD_STATE;
 
-    case IDENTIFIER:
-      if (isalpha(ch) || isdigit(ch) || ch == '_') return IDENTIFIER;
-      return BAD_STATE;
+    case T_IDENTIFIER:
+      if (isalpha(ch) || isdigit(ch) || ch == '_') return T_IDENTIFIER;
+      return T_BAD_STATE;
 
     default:
-      return BAD_STATE;
+      return T_BAD_STATE;
   }
 }
 
@@ -368,19 +275,19 @@ void* strToValue(TokenType type, const char* str, int start, int end) {
   int n;
 
   switch (type) {
-    case BOOLEAN:
+    case T_BOOLEAN:
       boolOut = malloc(sizeof(bool));
       *boolOut = (str[start] == 't' ? true : false);
       return boolOut;
 
-    case INTEGER:
+    case T_INTEGER:
       intOut = malloc(sizeof(int));
       copyString(&intStr, str, start, end);
       *intOut = strtoimax(intStr, &endPtr, 10);
       free (intStr);
       return intOut;
 
-    case STRING:
+    case T_STRING:
       // -2 b/c we don't care about quotes
       n = end - start - 2;
       strOut = malloc(sizeof(char) * (n + 1));
@@ -401,43 +308,15 @@ void* strToValue(TokenType type, const char* str, int start, int end) {
 // translate accepting state into more uniform token type
 // ie. ID_E, ID_S, etc. all get converted to IDENTIFIER
 TokenType normalizeTokenType(TokenType type) {
-  if (type >= ID_S) {
-    return IDENTIFIER;
+  if (type >= T_ID_S) {
+    return T_IDENTIFIER;
   }
 
   switch (type) {
-    case COMMENT_END: return COMMENT;
-    case NEWLINE: return WHITESPACE;
+    case T_COMMENT_END: return T_COMMENT;
+    case T_NEWLINE: return T_WHITESPACE;
     default: return type;
   }
-}
-
-#define NRM "\x1B[0m"
-#define RED "\x1B[31m"
-#define YEL "\x1B[33m"
-#define ERR_INVALID "Invalid or unexpected token"
-#define ERR_STRING  "Unclosed string"
-
-void lexError(const char* input, char* error, int lineStart, int line, int col, int end) {
-  char* lineStr = NULL;
-  int lineLength = strcspn(input + lineStart, "\n\0") - 1;
-  copyString(&lineStr, input, lineStart, lineStart + lineLength);
-
-  int lineNumLength = 1;
-  int n = line;
-  while ((n = n / 10)) lineNumLength++;
-
-  printf(RED "Syntax Error: %s on line %d\n" NRM, error, line);
-  printf("%d: %s\n", line, lineStr);
-  for (int i = -(lineNumLength + 2); i < col; i++) {
-    printf(" ");
-  }
-  for (int i = 0; i < end; i++) {
-    printf("^");
-  }
-  printf("\n\n");
-
-  free (lineStr);
 }
 
 // some nice global variables for our lexing
@@ -447,14 +326,14 @@ bool hasLexError = false;
 
 // get the next token from input; returns length of lexeme
 int maximalMunch(Token* dest, const char* input, int start) {
-  TokenType state = START;
-  TokenType acceptingState = BAD_STATE;
+  TokenType state = T_START;
+  TokenType acceptingState = T_BAD_STATE;
   int cur = start;
   int acceptingEnd = cur;
 
   // keep looping until we reach a bad state
-  while (input[cur] != '\0' && (state = dfaStep(input[cur], state)) != BAD_STATE) {
-    if (state > START) {
+  while (input[cur] != '\0' && (state = dfaStep(input[cur], state)) != T_BAD_STATE) {
+    if (state > T_START) {
       acceptingState = state;
       acceptingEnd = cur + 1;
     }
@@ -472,16 +351,16 @@ int maximalMunch(Token* dest, const char* input, int start) {
     hasLexError = true;
 
     switch (acceptingState) {
-      case BAD_STATE:
+      case T_BAD_STATE:
         acceptingEnd++;
         // intentional fall through
 
-      case INTALPHA:
-        error = ERR_INVALID;
+      case T_INTALPHA:
+        error = ERR_BAD_TOKEN;
         break;
 
-      case STRING_UNCLOSED:
-        error = ERR_STRING;
+      case T_STRING_UNCLOSED:
+        error = ERR_BAD_STRING;
         break;
 
       default:
@@ -512,7 +391,6 @@ Token* lex(const char* input) {
 
   while (pos < end) {
     length = maximalMunch(nextToken, input, pos);
-    // TODO: handle fail to get token
     curToken = nextToken;
     nextToken = nextToken->next;
     pos += length;
@@ -530,10 +408,10 @@ void printTokens(Token* head) {
   printf("~~~~~~~\nTOKENS:\n~~~~~~~\n");
   while (cur != NULL) {
     switch (cur->type) {
-      case BOOLEAN:
+      case T_BOOLEAN:
         printf("`%s`\n", *(bool*)cur->value ? "true" : "false");
         break;
-      case INTEGER:
+      case T_INTEGER:
         printf("`%d`\n", *(int*)cur->value);
         break;
       default:
